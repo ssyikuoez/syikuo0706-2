@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>單字保衛戰 - Google Sheet 排行榜</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .falling-word { transition: color 0.2s; }
+        .heart-lost { filter: grayscale(100%); opacity: 0.3; }
+    </style>
+</head>
+<body class="bg-gray-900 text-white h-screen flex flex-col overflow-hidden font-sans">
+
+    <header class="p-4 flex justify-between items-center bg-gray-800 shadow-md">
+        <h1 class="text-xl font-bold text-yellow-400">單字保衛戰</h1>
+        <div id="score" class="text-lg">分數: 0</div>
+        <div id="lives" class="flex gap-2">
+            <span class="text-red-500 text-2xl">❤</span>
+            <span class="text-red-500 text-2xl">❤</span>
+            <span class="text-red-500 text-2xl">❤</span>
+        </div>
+    </header>
+
+    <main id="game-area" class="flex-grow relative w-full overflow-hidden"></main>
+
+    <footer class="p-4 bg-gray-800">
+        <div id="keyboard" class="flex flex-col gap-2 max-w-2xl mx-auto items-center"></div>
+    </footer>
+
+    <script>
+        const GAS_URL = "https://script.google.com/macros/s/AKfycbzxKxV1QFnBsE548DaN3tYFmZgjUV95in1Gk2YAtCREntw2Rc-Y2OJ2cXgRGz3vLwIS/exec";
+        const words = ["APPLE", "BANANA", "TIGER", "HOUSE", "MOUSE", "SCHOOL", "FRIEND", "BREAD", "WATER", "CHAIR"];
+        const rows = ["QWERTYUIOP", "ASDFGHJKL", "ZXCVBNM"];
+        let score = 0, lives = 3, activeWords = [], lastSpawnTime = 0, gameActive = true;
+        const gameArea = document.getElementById('game-area');
+        const keyboard = document.getElementById('keyboard');
+
+        rows.forEach(row => {
+            const rowDiv = document.createElement('div');
+            rowDiv.className = "flex gap-1";
+            row.split("").forEach(key => {
+                const btn = document.createElement('button');
+                btn.textContent = key;
+                btn.className = "bg-gray-700 hover:bg-gray-600 w-8 h-10 sm:w-10 sm:h-12 rounded transition-all font-bold";
+                btn.onclick = () => handleInput(key, btn);
+                rowDiv.appendChild(btn);
+            });
+            keyboard.appendChild(rowDiv);
+        });
+
+        function handleInput(char, btn) {
+            if(!gameActive) return;
+            let hit = false;
+            activeWords.forEach((wordObj, index) => {
+                if (wordObj.text[wordObj.hiddenIdx] === char) {
+                    score += 10;
+                    document.getElementById('score').textContent = "分數: " + score;
+                    wordObj.el.classList.add('text-green-400');
+                    setTimeout(() => { wordObj.el.remove(); activeWords.splice(index, 1); }, 200);
+                    hit = true;
+                }
+            });
+            if (!hit && btn) { btn.classList.add('bg-red-600'); setTimeout(() => btn.classList.remove('bg-red-600'), 200); }
+        }
+
+        window.addEventListener('keydown', (e) => {
+            const key = e.key.toUpperCase();
+            const btn = Array.from(document.querySelectorAll('button')).find(b => b.textContent === key);
+            if (btn) handleInput(key, btn);
+        });
+
+        function spawnWord() {
+            const wordObj = { text: words[Math.floor(Math.random() * words.length)], hiddenIdx: Math.floor(Math.random() * 5), x: Math.random() * 80 + 5, y: 0, speed: 0.4 + (score / 2000) };
+            wordObj.hiddenIdx = Math.min(wordObj.hiddenIdx, wordObj.text.length - 1);
+            wordObj.display = wordObj.text.split('').map((char, i) => i === wordObj.hiddenIdx ? '_' : char).join('');
+            const el = document.createElement('div');
+            el.className = "absolute text-2xl font-bold text-white falling-word";
+            el.style.left = wordObj.x + "%";
+            el.textContent = wordObj.display;
+            gameArea.appendChild(el);
+            wordObj.el = el;
+            activeWords.push(wordObj);
+        }
+
+        async function endGame() {
+            gameActive = false;
+            const name = prompt("遊戲結束！最終得分: " + score + "\n輸入名字以儲存至雲端排行榜：");
+            if (name) {
+                try {
+                    const response = await fetch(GAS_URL, {
+                        method: 'POST',
+                        mode: 'no-cors',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ name, score })
+                    });
+                    alert("分數已送出！");
+                } catch(e) { console.error(e); }
+            }
+            location.reload();
+        }
+
+        function update(timestamp) {
+            if (!gameActive) return;
+            if (timestamp - lastSpawnTime > 2500 && activeWords.length < 3) { spawnWord(); lastSpawnTime = timestamp; }
+            activeWords.forEach((w, i) => {
+                w.y += w.speed;
+                w.el.style.top = w.y + "px";
+                if (w.y > gameArea.offsetHeight - 50) {
+                    w.el.remove(); activeWords.splice(i, 1); lives--;
+                    if(lives >= 0) document.getElementById('lives').children[lives].classList.add('heart-lost');
+                    if(lives <= 0) endGame();
+                }
+            });
+            requestAnimationFrame(update);
+        }
+        requestAnimationFrame(update);
+    </script>
+</body>
+</html>
